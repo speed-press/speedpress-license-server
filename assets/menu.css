@@ -1,0 +1,36 @@
+#toplevel_page_spls-licenses .wp-menu-image {
+	background: linear-gradient(135deg, #2563EB, #9333EA) !important;
+	border-radius: 5px !important;
+	width: 20px !important;
+	height: 20px !important;
+	margin: 7px 8px 0 7px !important;
+}
+#toplevel_page_spls-licenses .wp-menu-image img { display: none !important; }
+#toplevel_page_spls-licenses .wp-menu-image:before {
+	content: "SP" !important;
+	font-family: Inter, system-ui, sans-serif !important;
+	font-size: 8px !important;
+	font-weight: 800 !important;
+	color: #fff !important;
+	width: 20px !important;
+	height: 20px !important;
+	line-height: 20px !important;
+	text-align: center !important;
+	display: block !important;
+	background: none !important;
+}
+.plugins td.plugin-title strong::before {
+	content: "SP";
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	margin-right: 6px;
+	border-radius: 6px;
+	background: linear-gradient(135deg, #2563EB, #9333EA);
+	color: #fff;
+	font-size: 8px;
+	font-weight: 800;
+	vertical-align: middle;
+}
