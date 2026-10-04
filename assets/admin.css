@@ -243,3 +243,7 @@
 .spls-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .spls-actions form { display: inline; margin: 0; }
 .spls-empty { text-align: center; padding: 28px 12px; color: var(--muted); }
+
+.spls-search { display:flex; gap:8px; margin:0 0 10px; }
+.spls-search input { flex:1; border:1px solid #e5e7eb; border-radius:12px; padding:9px 12px; }
+.spls-pager { display:flex; gap:8px; margin-top:12px; }

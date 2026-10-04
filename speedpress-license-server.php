@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       SpeedPress License Server
  * Description:       SaaS license console for SpeedPress plugins. Free, Premium yearly, Lifetime, and Agency codes. Expired yearly keys are revoked automatically. Lifetime keys never expire.
- * Version:           1.3.2
+ * Version:           1.3.4
  * Author:            SpeedPress
  * Author URI:        https://wpspeedpress.com
  * Text Domain:       speedpress-license-server
@@ -10,7 +10,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'SPLS_VERSION', '1.3.2' );
+define( 'SPLS_VERSION', '1.3.4' );
 define( 'SPLS_FILE', __FILE__ );
 define( 'SPLS_PATH', plugin_dir_path( __FILE__ ) );
 define( 'SPLS_URL', plugin_dir_url( __FILE__ ) );
@@ -34,7 +34,7 @@ function spls_menu() {
 		'manage_options',
 		'spls-licenses',
 		'spls_page',
-		'dashicons-shield-alt',
+		SPLS_URL . 'assets/sp-logo.png',
 		58
 	);
 }
@@ -140,6 +140,13 @@ function spls_handle() {
 	check_admin_referer( 'spls_keys' );
 	$action = sanitize_key( wp_unslash( $_POST['spls_action'] ) );
 	$keys   = get_option( SPLS_OPTION_KEYS, array() );
+
+	if ( 'create' === $action || 'update' === $action ) {
+		if ( empty( $_POST['spls_customer'] ) || empty( $_POST['spls_email'] ) || ! is_email( wp_unslash( $_POST['spls_email'] ) ) ) {
+			add_settings_error( 'spls', 'required', 'Customer and a valid contact email are required.', 'error' );
+			return;
+		}
+	}
 
 	if ( 'create' === $action ) {
 		$plan = sanitize_key( wp_unslash( $_POST['spls_plan'] ?? 'free' ) );
@@ -355,7 +362,21 @@ function spls_upsert_site( $incoming ) {
  * @param WP_REST_Request $request Request.
  * @return WP_REST_Response
  */
+function spls_rate_ok() {
+	$ip  = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '0';
+	$key = 'spls_rl_' . md5( $ip );
+	$n   = (int) get_transient( $key );
+	if ( $n > 60 ) {
+		return false;
+	}
+	set_transient( $key, $n + 1, MINUTE_IN_SECONDS );
+	return true;
+}
+
 function spls_activate( $request ) {
+	if ( ! spls_rate_ok() ) {
+		return rest_ensure_response( array( 'success' => false, 'message' => 'Too many requests. Try again in a minute.' ) );
+	}
 	spls_expire_due_keys();
 	$body = spls_body( $request );
 	$key  = strtoupper( preg_replace( '/[^A-Z0-9\-]/i', '', $body['key'] ?? '' ) );
@@ -488,6 +509,31 @@ function spls_page() {
 	$filter = sanitize_key( wp_unslash( $_GET['spls_status'] ?? 'all' ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 	$edit   = sanitize_text_field( wp_unslash( $_GET['spls_edit'] ?? '' ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 	$editing = ( $edit && isset( $keys[ $edit ] ) ) ? $keys[ $edit ] : null;
+	$q       = sanitize_text_field( wp_unslash( $_GET['spls_q'] ?? '' ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+	$per     = 25;
+	$paged   = max( 1, absint( $_GET['paged'] ?? 1 ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+	if ( $q ) {
+		$keys = array_filter(
+			$keys,
+			static function ( $row ) use ( $q ) {
+				$hay = strtolower( ( $row['key'] ?? '' ) . ' ' . ( $row['customer'] ?? '' ) . ' ' . ( $row['email'] ?? '' ) . ' ' . ( $row['note'] ?? '' ) . ' ' . ( $row['plan'] ?? '' ) );
+				return false !== strpos( $hay, strtolower( $q ) );
+			}
+		);
+		$sites = array_filter(
+			$sites,
+			static function ( $row ) use ( $q ) {
+				$hay = strtolower( ( $row['site_url'] ?? '' ) . ' ' . ( $row['admin_email'] ?? '' ) . ' ' . ( $row['key'] ?? '' ) . ' ' . ( $row['site_name'] ?? '' ) );
+				return false !== strpos( $hay, strtolower( $q ) );
+			}
+		);
+	}
+	$key_total  = count( $keys );
+	$site_total = count( $sites );
+	$key_pages  = max( 1, (int) ceil( $key_total / $per ) );
+	$site_pages = max( 1, (int) ceil( $site_total / $per ) );
+	$keys_page  = array_slice( $keys, ( $paged - 1 ) * $per, $per, true );
+	$sites_page = array_slice( array_values( $sites ), ( $paged - 1 ) * $per, $per );
 
 	$counts = array(
 		'sites'   => count( $sites ),
@@ -557,20 +603,20 @@ function spls_page() {
 						</select>
 					</div>
 					<div class="spls-field">
-						<label>Customer</label>
-						<input type="text" name="spls_customer" value="<?php echo esc_attr( $editing['customer'] ?? '' ); ?>" />
+						<label>Customer *</label>
+						<input type="text" name="spls_customer" required value="<?php echo esc_attr( $editing['customer'] ?? '' ); ?>" />
 					</div>
 					<div class="spls-field">
-						<label>Contact email</label>
-						<input type="email" name="spls_email" value="<?php echo esc_attr( $editing['email'] ?? '' ); ?>" />
+						<label>Contact email *</label>
+						<input type="email" name="spls_email" required value="<?php echo esc_attr( $editing['email'] ?? '' ); ?>" />
 					</div>
 					<div class="spls-field">
 						<label>Internal note</label>
 						<input type="text" name="spls_note" value="<?php echo esc_attr( $editing['note'] ?? '' ); ?>" />
 					</div>
 					<div class="spls-field">
-						<label>Max sites</label>
-						<input type="number" name="spls_max" value="<?php echo esc_attr( (string) ( $editing['max_sites'] ?? 1 ) ); ?>" min="1" />
+						<label>Max sites *</label>
+						<input type="number" name="spls_max" required min="1" value="<?php echo esc_attr( (string) ( $editing['max_sites'] ?? 1 ) ); ?>" />
 					</div>
 					<div class="spls-field">
 						<label>Expires (empty = Lifetime / never)</label>
@@ -586,6 +632,12 @@ function spls_page() {
 			<div>
 				<div class="spls-card">
 					<div class="spls-card-head"><span class="spls-card-ico"><span class="dashicons dashicons-lock"></span></span><h2>Codes</h2></div>
+					<form method="get" class="spls-search">
+						<input type="hidden" name="page" value="spls-licenses" />
+						<input type="search" name="spls_q" value="<?php echo esc_attr( $q ); ?>" placeholder="Search code, customer, email, site" />
+						<button class="spls-btn-edit" type="submit"><span class="dashicons dashicons-search"></span> Search</button>
+					</form>
+					<p class="spls-muted"><?php echo esc_html( $key_total . ' codes · page ' . $paged . ' of ' . $key_pages ); ?></p>
 					<table class="spls-table">
 						<thead>
 							<tr>
@@ -601,7 +653,7 @@ function spls_page() {
 						<?php if ( ! $keys ) : ?>
 							<tr><td colspan="6">No codes yet.</td></tr>
 						<?php endif; ?>
-						<?php foreach ( $keys as $row ) : ?>
+						<?php foreach ( $keys_page as $row ) : ?>
 							<tr>
 								<td><span class="spls-code"><?php echo esc_html( $row['key'] ); ?></span>
 									<div class="spls-muted"><?php echo esc_html( $row['customer'] ?? '' ); ?> <?php echo esc_html( $row['email'] ?? '' ); ?></div>
@@ -631,6 +683,13 @@ function spls_page() {
 						<?php endforeach; ?>
 						</tbody>
 					</table>
+					<?php if ( $key_pages > 1 ) : ?>
+						<p class="spls-pager">
+							<?php if ( $paged > 1 ) : ?><a class="spls-btn-edit" href="<?php echo esc_url( add_query_arg( array( 'paged' => $paged - 1, 'spls_q' => $q ) ) ); ?>"><span class="dashicons dashicons-arrow-left-alt2"></span> Previous</a><?php endif; ?>
+							<span class="spls-muted"><?php echo esc_html( $paged . ' / ' . $key_pages ); ?></span>
+							<?php if ( $paged < $key_pages ) : ?><a class="spls-btn-edit" href="<?php echo esc_url( add_query_arg( array( 'paged' => $paged + 1, 'spls_q' => $q ) ) ); ?>">Next <span class="dashicons dashicons-arrow-right-alt2"></span></a><?php endif; ?>
+						</p>
+					<?php endif; ?>
 				</div>
 			</div>
 		</div>
@@ -661,7 +720,7 @@ function spls_page() {
 				<tbody>
 				<?php
 				$shown = 0;
-				foreach ( $sites as $row ) :
+				foreach ( $sites_page as $row ) :
 					if ( 'all' !== $filter && ( $row['status'] ?? '' ) !== $filter ) {
 						continue;
 					}
